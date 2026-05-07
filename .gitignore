@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Node
+node_modules/
+dist/
+.cache/
+*.local
+.env.local
+.env.*.local
+
+# Docker / environment
+.env
+
+# Project-specific runtime data
+backend/uploads/
+backend/jobs/
+backend/test_frames/
+test/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*

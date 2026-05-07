@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        USE_GPU: "false"
+    expose:
+      - "8000"
+    volumes:
+      - ./backend:/app
+      - ./test:/test:ro
+      - video_uploads:/app/uploads
+      - job_data:/app/jobs
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  video_uploads:
+  job_data:
