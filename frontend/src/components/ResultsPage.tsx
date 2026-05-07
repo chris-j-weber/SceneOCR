@@ -80,11 +80,39 @@ export default function ResultsPage({
   const [mergeOpen,       setMergeOpen]       = useState(false)
   const [mergeText,       setMergeText]       = useState('')
   const [mergeSelectedId, setMergeSelectedId] = useState<string | null>(null)
+  const [undoStack,       setUndoStack]       = useState<EditableOccurrence[][]>([])
 
   // Propagate edits upstream so App can save the project
   useEffect(() => {
     onResultsChange?.(items.map(({ id: _id, ...rest }) => rest as TextOccurrence))
   }, [items])
+
+  // Ctrl+Z undo
+  useEffect(() => {
+    function onKey(e: globalThis.KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !mergeOpen) {
+        e.preventDefault()
+        undo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undoStack, mergeOpen])
+
+  // ── undo ─────────────────────────────────────────────────────────────────
+  function pushUndo() {
+    setUndoStack(prev => [...prev.slice(-19), [...items]])
+  }
+
+  function undo() {
+    if (undoStack.length === 0) return
+    const snapshot = undoStack[undoStack.length - 1]
+    setUndoStack(prev => prev.slice(0, -1))
+    setItems(snapshot)
+    setSelectedIds(new Set())
+    setEditingId(null)
+    setTimeEdit(null)
+  }
 
   // ── color helpers ────────────────────────────────────────────────────────
   function colorFor(id: string) {
@@ -119,6 +147,7 @@ export default function ResultsPage({
 
   function commitEdit() {
     if (editingId && editText.trim()) {
+      pushUndo()
       setItems(prev => prev.map(i => i.id === editingId ? { ...i, text: editText.trim() } : i))
     }
     setEditingId(null)
@@ -142,6 +171,7 @@ export default function ResultsPage({
     const start = parseFmt(timeEdit.start)
     const end   = parseFmt(timeEdit.end)
     if (start !== null && end !== null && end >= start) {
+      pushUndo()
       setItems(prev => prev.map(i =>
         i.id === timeEdit.id ? { ...i, start_time: start, end_time: end } : i
       ))
@@ -156,6 +186,7 @@ export default function ResultsPage({
 
   // ── delete ───────────────────────────────────────────────────────────────
   function deleteItem(id: string) {
+    pushUndo()
     setItems(prev => prev.filter(i => i.id !== id))
     setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s })
     if (editingId === id) setEditingId(null)
@@ -173,21 +204,25 @@ export default function ResultsPage({
 
   function confirmMerge() {
     if (!mergeText.trim()) return
-    const sel  = items.filter(i => selectedIds.has(i.id)).sort((a, b) => a.start_time - b.start_time)
-    const merged: EditableOccurrence = {
-      id:         crypto.randomUUID(),
-      text:       mergeText.trim(),
-      start_time: sel[0].start_time,
-      end_time:   sel[sel.length - 1].end_time,
-      poly:       sel[0].poly,
-      polys:      sel.flatMap(i => i.polys ?? []),
-      confidence: sel.reduce((s, i) => s + i.confidence, 0) / sel.length,
-    }
-    const ids = new Set(selectedIds)
+    const ids  = new Set(selectedIds)
+    const text = mergeText.trim()
+    pushUndo()
     setItems(prev => {
-      const idx      = prev.findIndex(i => ids.has(i.id))
+      const sel = prev.filter(i => ids.has(i.id)).sort((a, b) => a.start_time - b.start_time)
+      if (sel.length === 0) return prev
+      const merged: EditableOccurrence = {
+        id:         crypto.randomUUID(),
+        text,
+        start_time: sel[0].start_time,
+        end_time:   sel[sel.length - 1].end_time,
+        poly:       sel[0].poly,
+        polys:      sel.flatMap(i => i.polys ?? []),
+        confidence: sel.reduce((s, i) => s + i.confidence, 0) / sel.length,
+      }
+      const firstIdx = prev.findIndex(i => ids.has(i.id))
       const filtered = prev.filter(i => !ids.has(i.id))
-      filtered.splice(idx, 0, merged)
+      if (firstIdx >= 0) filtered.splice(firstIdx, 0, merged)
+      else filtered.push(merged)
       return filtered
     })
     setSelectedIds(new Set())
@@ -437,6 +472,15 @@ export default function ResultsPage({
           <span className="results-count">{items.length} text occurrence{items.length !== 1 ? 's' : ''}</span>
         </div>
         <div className="results-header-right">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={undo}
+            disabled={undoStack.length === 0}
+            title="Undo (Ctrl+Z)"
+          >
+            Undo
+          </button>
           {selCount >= 2 && (
             <button type="button" className="btn-merge" onClick={openMerge}>
               Merge ({selCount})

@@ -50,7 +50,15 @@ def _word_validity(word: str) -> float:
 
 def _text_validity(text: str) -> float:
     words = text.split()
-    return sum(_word_validity(w) for w in words) / len(words) if words else 0.0
+    if not words:
+        return 0.0
+    per_word = sum(_word_validity(w) for w in words) / len(words)
+    # Multi-word text is more likely correct: two properly-separated words score
+    # better than a single merged token of equal per-word validity.
+    # Multiplier: ×1.4 for 2 words, ×1.8 for 3+ words, capped at 1.0.
+    if len(words) > 1:
+        return min(1.0, per_word * (1.0 + 0.4 * min(len(words) - 1, 2)))
+    return per_word
 
 
 def _centroid_score(candidate: str, all_texts: list[str]) -> float:
@@ -68,8 +76,10 @@ def _best_candidate(all_texts: list[str]) -> str:
         return unique[0]
     best, best_score = unique[0], -1.0
     for candidate in unique:
-        score = (0.40 * counts[candidate] / total
-                 + 0.35 * _text_validity(candidate)
+        # Lower frequency weight so that a spaced version ("ANDREW RONA") can
+        # beat a more-frequent merged token ("ANDREWRONA") via the validity bonus.
+        score = (0.20 * counts[candidate] / total
+                 + 0.55 * _text_validity(candidate)
                  + 0.25 * _centroid_score(candidate, all_texts))
         if score > best_score:
             best_score, best = score, candidate
@@ -87,17 +97,21 @@ def _fix_missing_spaces(text: str) -> str:
     Strategy per token:
     1. Skip if the token is already a known word or too short.
     2. Try every split point (min 2 chars each side).
-       Accept the FIRST split where both halves are known dictionary words.
+       Accept the FIRST split where BOTH halves are known dictionary words,
+       OR the right half is itself recursively further split.
     3. Recursively try to split the right half further (handles 3-word runs).
 
-    False-positive guard: compound words that exist in the dictionary
-    ('himself', 'birthday', 'cannot') are skipped in step 1.
+    Strict requirement prevents false splits of proper names ('ANDREWRONA') that
+    are not in the dictionary — those are handled upstream by _best_candidate
+    preferring the correctly-spaced version from OCR frames that produced it.
     """
     def _try_split(token: str) -> str:
         lower = token.lower()
-        if len(token) <= 3 or _known(lower):
+        if len(token) <= 4 or _known(lower):
             return token
-        for i in range(2, len(token) - 1):
+        # Require at least 3 chars on the left so short function words like
+        # "AN", "BY" don't falsely split longer tokens ("ANDREW" → "AN DREW").
+        for i in range(3, len(token) - 1):
             left  = token[:i]
             right = token[i:]
             if _known(left.lower()):

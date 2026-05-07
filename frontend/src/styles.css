@@ -260,7 +260,8 @@ body {
   transition: border-color 0.15s;
   white-space: nowrap;
 }
-.btn-secondary:hover { border-color: var(--accent); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
+.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Analysis page ── */
 .analysis-card {
