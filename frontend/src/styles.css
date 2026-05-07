@@ -599,6 +599,42 @@ body {
 
 .merge-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.25rem; }
 
+.merge-radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.merge-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.merge-radio-option:hover { background: var(--surface-2); }
+.merge-radio-option.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+.merge-radio-option input[type="radio"] { accent-color: var(--accent); flex-shrink: 0; }
+
+.merge-radio-text {
+  flex: 1;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.merge-radio-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

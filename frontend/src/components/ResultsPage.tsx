@@ -72,13 +72,14 @@ export default function ResultsPage({
   const [items, setItems] = useState<EditableOccurrence[]>(() =>
     results.map(r => ({ ...r, id: crypto.randomUUID() }))
   )
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [editingId,   setEditingId]   = useState<string | null>(null)
-  const [editText,    setEditText]    = useState('')
-  const [timeEdit,    setTimeEdit]    = useState<TimeEdit | null>(null)
-  const [search,      setSearch]      = useState('')
-  const [mergeOpen,   setMergeOpen]   = useState(false)
-  const [mergeText,   setMergeText]   = useState('')
+  const [selectedIds,     setSelectedIds]     = useState<Set<string>>(new Set())
+  const [editingId,       setEditingId]       = useState<string | null>(null)
+  const [editText,        setEditText]        = useState('')
+  const [timeEdit,        setTimeEdit]        = useState<TimeEdit | null>(null)
+  const [search,          setSearch]          = useState('')
+  const [mergeOpen,       setMergeOpen]       = useState(false)
+  const [mergeText,       setMergeText]       = useState('')
+  const [mergeSelectedId, setMergeSelectedId] = useState<string | null>(null)
 
   // Propagate edits upstream so App can save the project
   useEffect(() => {
@@ -163,8 +164,10 @@ export default function ResultsPage({
   // ── merge ────────────────────────────────────────────────────────────────
   function openMerge() {
     if (editingId) commitEdit()
-    const sel = items.filter(i => selectedIds.has(i.id))
-    setMergeText(sel.reduce((b, c) => c.text.length > b.text.length ? c : b).text)
+    const sel     = items.filter(i => selectedIds.has(i.id))
+    const longest = sel.reduce((b, c) => c.text.length > b.text.length ? c : b)
+    setMergeSelectedId(longest.id)
+    setMergeText(longest.text)
     setMergeOpen(true)
   }
 
@@ -193,7 +196,7 @@ export default function ResultsPage({
 
   // ── CSV export ───────────────────────────────────────────────────────────
   function exportCSV() {
-    const header = 'Text,Start (s),Ende (s),Dauer (s),Konfidenz\n'
+    const header = 'Text,Start (s),End (s),Duration (s),Confidence\n'
     const rows = items.map(r =>
       [
         `"${r.text.replace(/"/g, '""')}"`,
@@ -219,23 +222,86 @@ export default function ResultsPage({
     setNaturalSize({ w: v.videoWidth, h: v.videoHeight })
   }
 
-  // Capture thumbnail from the middle of the video (once, after metadata is ready)
+  // Capture thumbnail from the middle of the video (once, after metadata is ready).
+  // Detects and removes black bars (letterbox / pillarbox), then center-crops to 16:9.
   useEffect(() => {
     if (thumbnailDone.current || naturalSize.w === 0 || duration === 0 || !videoRef.current) return
     const video = videoRef.current
 
     const capture = () => {
       video.removeEventListener('seeked', capture)
-      const canvas = document.createElement('canvas')
-      canvas.width  = 320
-      canvas.height = Math.round(320 * naturalSize.h / naturalSize.w)
-      const ctx = canvas.getContext('2d')
+
+      // Draw at a working resolution (wide enough for accurate bar detection)
+      const workW = 640
+      const workH = Math.round(640 * naturalSize.h / naturalSize.w)
+      const work  = document.createElement('canvas')
+      work.width  = workW
+      work.height = workH
+      const ctx   = work.getContext('2d', { willReadFrequently: true })
       if (!ctx) return
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+      ctx.drawImage(video, 0, 0, workW, workH)
+
+      // Average brightness of a full row (sample every 4th pixel for speed)
+      function rowBrightness(y: number): number {
+        const d = ctx!.getImageData(0, y, workW, 1).data
+        let sum = 0, n = 0
+        for (let i = 0; i < d.length; i += 16, n++) sum += (d[i] + d[i+1] + d[i+2]) / 3
+        return n ? sum / n : 0
+      }
+      // Average brightness of a full column
+      function colBrightness(x: number): number {
+        const d = ctx!.getImageData(x, 0, 1, workH).data
+        let sum = 0, n = 0
+        for (let i = 0; i < d.length; i += 16, n++) sum += (d[i] + d[i+1] + d[i+2]) / 3
+        return n ? sum / n : 0
+      }
+
+      const BLACK      = 8    // brightness threshold for "black bar"
+      const MAX_CROP   = 0.3  // don't crop more than 30% from any side
+      const maxTopScan = Math.floor(workH * MAX_CROP)
+      const maxBotScan = workH - 1 - maxTopScan
+      const maxLftScan = Math.floor(workW * MAX_CROP)
+      const maxRgtScan = workW - 1 - maxLftScan
+
+      let top = 0, bot = workH - 1, lft = 0, rgt = workW - 1
+      while (top < maxTopScan && rowBrightness(top) < BLACK) top++
+      while (bot > maxBotScan && rowBrightness(bot) < BLACK) bot--
+      while (lft < maxLftScan && colBrightness(lft) < BLACK) lft++
+      while (rgt > maxRgtScan && colBrightness(rgt) < BLACK) rgt--
+
+      let cx = lft, cy = top
+      let cw = rgt - lft + 1
+      let ch = bot - top + 1
+
+      // Fallback: if nothing was detected just use the full frame
+      if (cw <= 0 || ch <= 0) { cx = 0; cy = 0; cw = workW; ch = workH }
+
+      // Center-crop content area to 16:9
+      const AR = 16 / 9
+      if (cw / ch > AR) {
+        const nw = Math.round(ch * AR)
+        cx += Math.round((cw - nw) / 2)
+        cw  = nw
+      } else if (cw / ch < AR) {
+        const nh = Math.round(cw / AR)
+        cy += Math.round((ch - nh) / 2)
+        ch  = nh
+      }
+
+      // Render final 320×180 thumbnail
+      const out    = document.createElement('canvas')
+      out.width    = 320
+      out.height   = 180
+      const outCtx = out.getContext('2d')
+      if (!outCtx) return
+      outCtx.drawImage(work, cx, cy, cw, ch, 0, 0, 320, 180)
+
+      const dataUrl = out.toDataURL('image/jpeg', 0.75)
       if (dataUrl.length > 1000) {
         thumbnailDone.current = true
         onThumbnailCapture?.(dataUrl)
+        // Reset playback to the start after capturing the thumbnail
+        video.currentTime = 0
       }
     }
 
@@ -365,7 +431,7 @@ export default function ResultsPage({
     <div className="results-page">
       <header className="results-header">
         <div className="results-header-left">
-          <button type="button" className="btn-back" onClick={onReset} title="Zur Projektübersicht">
+          <button type="button" className="btn-back" onClick={onReset} title="Back to projects">
             ←
           </button>
           <span className="results-count">{items.length} text occurrence{items.length !== 1 ? 's' : ''}</span>
@@ -373,18 +439,18 @@ export default function ResultsPage({
         <div className="results-header-right">
           {selCount >= 2 && (
             <button type="button" className="btn-merge" onClick={openMerge}>
-              Zusammenführen ({selCount})
+              Merge ({selCount})
             </button>
           )}
           {selCount > 0 && (
             <button type="button" className="btn-secondary" onClick={() => setSelectedIds(new Set())}>
-              Abwählen
+              Deselect
             </button>
           )}
           <input
             className="search-input"
             type="text"
-            placeholder="Suchen…"
+            placeholder="Search…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -416,9 +482,9 @@ export default function ResultsPage({
               type="button"
               className={`overlay-toggle${overlayOn ? ' active' : ''}`}
               onClick={() => setOverlayOn(!overlayOn)}
-              title="Textpositionen einblenden (Klick auf Box = auswählen)"
+              title="Show text positions (click box to select)"
             >
-              {overlayOn ? '⊠ Overlay an' : '⊡ Overlay'}
+              {overlayOn ? '⊠ Overlay on' : '⊡ Overlay'}
             </button>
           </div>
 
@@ -447,7 +513,7 @@ export default function ResultsPage({
 
         <div className="text-list-pane" ref={listRef}>
           {filtered.length === 0 && (
-            <div className="empty-state">Keine Ergebnisse{search ? ` für „${search}"` : ''}</div>
+            <div className="empty-state">No results{search ? ` for "${search}"` : ''}</div>
           )}
           {filtered.map(r => (
             <div
@@ -474,8 +540,8 @@ export default function ResultsPage({
                 {editingId === r.id ? (
                   <input
                     className="text-item-input"
-                    aria-label="Text bearbeiten"
-                    placeholder="Text eingeben…"
+                    aria-label="Edit text"
+                    placeholder="Enter text…"
                     autoFocus
                     value={editText}
                     onChange={e => setEditText(e.target.value)}
@@ -486,7 +552,7 @@ export default function ResultsPage({
                 ) : (
                   <div
                     className="text-item-text"
-                    title="Doppelklick zum Bearbeiten"
+                    title="Double-click to edit"
                   >
                     {r.text}
                   </div>
@@ -496,7 +562,7 @@ export default function ResultsPage({
                     <span className="time-edit-row" onClick={e => e.stopPropagation()}>
                       <input
                         className="time-edit-input"
-                        aria-label="Startzeit"
+                        aria-label="Start time"
                         value={timeEdit.start}
                         onChange={e => setTimeEdit(prev => prev ? { ...prev, start: e.target.value } : null)}
                         onBlur={commitTimeEdit}
@@ -506,7 +572,7 @@ export default function ResultsPage({
                       <span className="time-edit-sep">–</span>
                       <input
                         className="time-edit-input"
-                        aria-label="Endzeit"
+                        aria-label="End time"
                         value={timeEdit.end}
                         onChange={e => setTimeEdit(prev => prev ? { ...prev, end: e.target.value } : null)}
                         onBlur={commitTimeEdit}
@@ -516,7 +582,7 @@ export default function ResultsPage({
                   ) : (
                     <span
                       className="time-badge editable"
-                      title="Klicken zum Bearbeiten der Zeiten"
+                      title="Click to edit times"
                       onClick={e => openTimeEdit(r.id, e)}
                     >
                       {fmt(r.start_time)} – {fmt(r.end_time)}
@@ -529,7 +595,7 @@ export default function ResultsPage({
               <button
                 type="button"
                 className="item-delete"
-                title="Löschen"
+                title="Delete"
                 onClick={e => { e.stopPropagation(); deleteItem(r.id) }}
               >
                 ×
@@ -543,27 +609,52 @@ export default function ResultsPage({
         <div className="merge-overlay" onClick={() => setMergeOpen(false)}>
           <div className="merge-dialog" onClick={e => e.stopPropagation()}>
             <h3 className="merge-title">
-              {selCount} Elemente zusammenführen
+              Merge {selCount} items
             </h3>
             <div className="merge-info">
               {(() => {
                 const sel = items.filter(i => selectedIds.has(i.id)).sort((a, b) => a.start_time - b.start_time)
-                return `Zeitraum: ${fmt(sel[0]?.start_time ?? 0)} – ${fmt(sel[sel.length - 1]?.end_time ?? 0)}`
+                return `Time range: ${fmt(sel[0]?.start_time ?? 0)} – ${fmt(sel[sel.length - 1]?.end_time ?? 0)}`
               })()}
             </div>
-            <label className="merge-label">Kanonischer Text</label>
+            <label className="merge-label">Text to keep</label>
+            <div className="merge-radio-list">
+              {items
+                .filter(i => selectedIds.has(i.id))
+                .sort((a, b) => a.start_time - b.start_time)
+                .map(item => (
+                  <label
+                    key={item.id}
+                    className={`merge-radio-option${mergeSelectedId === item.id ? ' selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="merge-text"
+                      value={item.id}
+                      checked={mergeSelectedId === item.id}
+                      onChange={() => {
+                        setMergeSelectedId(item.id)
+                        setMergeText(item.text)
+                      }}
+                    />
+                    <span className="merge-radio-text">{item.text}</span>
+                    <span className="merge-radio-time">{fmt(item.start_time)}–{fmt(item.end_time)}</span>
+                  </label>
+                ))
+              }
+            </div>
+            <label className="merge-label">Canonical text</label>
             <input
               className="merge-input"
-              aria-label="Kanonischer Text für Zusammenführung"
-              placeholder="Text eingeben…"
-              autoFocus
+              aria-label="Canonical text for merge"
+              placeholder="Enter text…"
               value={mergeText}
-              onChange={e => setMergeText(e.target.value)}
+              onChange={e => { setMergeText(e.target.value); setMergeSelectedId(null) }}
               onKeyDown={e => { if (e.key === 'Enter') confirmMerge(); if (e.key === 'Escape') setMergeOpen(false) }}
             />
             <div className="merge-actions">
-              <button type="button" className="btn-primary" onClick={confirmMerge}>Zusammenführen</button>
-              <button type="button" className="btn-secondary" onClick={() => setMergeOpen(false)}>Abbrechen</button>
+              <button type="button" className="btn-primary" onClick={confirmMerge}>Merge</button>
+              <button type="button" className="btn-secondary" onClick={() => setMergeOpen(false)}>Cancel</button>
             </div>
           </div>
         </div>

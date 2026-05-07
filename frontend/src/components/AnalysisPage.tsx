@@ -5,24 +5,24 @@ interface Props {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  queued: 'In Warteschlange…',
-  extracting_frames: 'Frames werden extrahiert…',
-  analyzing: 'OCR läuft…',
-  grouping: 'Texte werden zusammengefasst…',
-  done: 'Fertig',
-  error: 'Fehler',
+  queued: 'Queued…',
+  extracting_frames: 'Extracting frames…',
+  analyzing: 'Running OCR…',
+  grouping: 'Grouping text tracks…',
+  done: 'Done',
+  error: 'Error',
 }
 
 export default function AnalysisPage({ job }: Props) {
   const progress = job?.progress ?? 0
-  const label = job ? STATUS_LABELS[job.status] ?? job.status : 'Wird gestartet…'
+  const label = job ? STATUS_LABELS[job.status] ?? job.status : 'Starting…'
   const message = job?.message ?? ''
   const isError = job?.status === 'error'
 
   return (
     <div className="page center-page">
       <div className="analysis-card">
-        <h2 className="analysis-title">Analyse läuft</h2>
+        <h2 className="analysis-title">Analyzing…</h2>
 
         {!isError && (
           <div className="spinner-wrap">

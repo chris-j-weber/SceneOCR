@@ -8,18 +8,18 @@ interface Props {
 const MODES = [
   {
     value: 'fast',
-    label: 'Schnell',
-    detail: '1fps — jede Sekunde wird geprüft',
+    label: 'Fast',
+    detail: '1 fps — one frame per second',
   },
   {
     value: 'accurate',
-    label: 'Genau',
-    detail: '1fps Übersicht + 8fps Feincheck in Textbereichen (±1s)',
+    label: 'Accurate',
+    detail: '1 fps scan + 8 fps detail pass in text regions (±1 s)',
   },
   {
     value: 'max',
     label: 'Maximum',
-    detail: '1fps Übersicht + framegenauer Feincheck in Textbereichen',
+    detail: '1 fps scan + native fps detail pass in text regions',
   },
 ]
 
@@ -52,13 +52,13 @@ export default function UploadPage({ onUpload, onBack }: Props) {
       <div className="upload-card">
         <div className="upload-header">
           {onBack && (
-            <button type="button" className="btn-back" onClick={onBack} title="Zurück">
+            <button type="button" className="btn-back" onClick={onBack} title="Back">
               ←
             </button>
           )}
-          <h1 className="app-title">Neues Projekt</h1>
+          <h1 className="app-title">New Project</h1>
         </div>
-        <p className="app-subtitle">Erkennt Texte in Videos lokal — ohne Cloud, ohne API.</p>
+        <p className="app-subtitle">Detects on-screen text locally — no cloud, no API.</p>
 
         <div
           className={`drop-zone${dragging ? ' dragging' : ''}${file ? ' has-file' : ''}`}
@@ -71,7 +71,7 @@ export default function UploadPage({ onUpload, onBack }: Props) {
             ref={inputRef}
             type="file"
             accept="video/*,.mkv"
-            aria-label="Videodatei auswählen"
+            aria-label="Select video file"
             className="hidden-file-input"
             onChange={e => e.target.files?.[0] && pickFile(e.target.files[0])}
           />
@@ -84,14 +84,14 @@ export default function UploadPage({ onUpload, onBack }: Props) {
           ) : (
             <div className="drop-hint">
               <div className="drop-icon">📁</div>
-              <div>Video hier ablegen oder klicken</div>
+              <div>Drop video here or click to browse</div>
               <div className="drop-formats">MP4 · MOV · AVI · MKV · WebM</div>
             </div>
           )}
         </div>
 
         <div className="fps-section">
-          <label className="fps-label">Analysemodus</label>
+          <label className="fps-label">Analysis mode</label>
           <div className="fps-options">
             {MODES.map(m => (
               <label key={m.value} className={`fps-option${mode === m.value ? ' selected' : ''}`}>
@@ -115,7 +115,7 @@ export default function UploadPage({ onUpload, onBack }: Props) {
           disabled={!file}
           onClick={() => file && onUpload(file, mode)}
         >
-          Analyse starten
+          Start analysis
         </button>
       </div>
     </div>

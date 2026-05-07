@@ -8,7 +8,7 @@ interface Props {
 }
 
 function formatDate(ts: number) {
-  return new Date(ts).toLocaleDateString('de-DE', {
+  return new Date(ts).toLocaleDateString('en-GB', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -32,7 +32,7 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
 
   function commitRename() {
     if (!editingId) return
-    const title = editTitle.trim() || 'Unbenanntes Projekt'
+    const title = editTitle.trim() || 'Untitled Project'
     updateProject(editingId, { title })
     setProjects(prev => prev.map(p => p.id === editingId ? { ...p, title } : p))
     setEditingId(null)
@@ -40,7 +40,7 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
 
   function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation()
-    if (!confirm('Projekt löschen?')) return
+    if (!confirm('Delete project?')) return
     deleteProject(id)
     setProjects(prev => prev.filter(p => p.id !== id))
   }
@@ -49,13 +49,13 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
     <div className="home-page">
       <header className="home-header">
         <h1 className="app-title">SceneOCR</h1>
-        <p className="app-subtitle">Texterkennung in Videos — lokal, ohne Cloud</p>
+        <p className="app-subtitle">On-screen text recognition — local, no cloud</p>
       </header>
 
       <div className="project-grid">
         <button type="button" className="project-card new-card" onClick={onNewProject}>
           <div className="new-card-icon">+</div>
-          <div className="new-card-label">Neues Projekt</div>
+          <div className="new-card-label">New Project</div>
         </button>
 
         {projects.map(p => (
@@ -102,7 +102,7 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
               <button
                 type="button"
                 className="project-rename-btn"
-                title="Umbenennen"
+                title="Rename"
                 onClick={e => startRename(p, e)}
               >
                 ✎
@@ -110,7 +110,7 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
               <button
                 type="button"
                 className="project-delete-btn"
-                title="Löschen"
+                title="Delete"
                 onClick={e => handleDelete(p.id, e)}
               >
                 ×
@@ -121,7 +121,7 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
       </div>
 
       {projects.length === 0 && (
-        <p className="home-empty">Noch keine Projekte. Erstelle ein neues, um loszulegen.</p>
+        <p className="home-empty">No projects yet. Create a new one to get started.</p>
       )}
     </div>
   )
