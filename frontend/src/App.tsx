@@ -1,33 +1,71 @@
-import { useRef, useState } from 'react'
-import { fetchResults, pollJob, uploadVideo } from './api'
+import { useEffect, useRef, useState } from 'react'
+import { apiUrl, fetchResults, pollJob, uploadVideo } from './api'
 import AnalysisPage from './components/AnalysisPage'
 import HomePage from './components/HomePage'
+import LoadingPage from './components/LoadingPage'
 import ResultsPage from './components/ResultsPage'
 import UploadPage from './components/UploadPage'
 import { saveProject } from './db'
 import { Job, SavedProject, TextOccurrence } from './types'
 
-type View = 'home' | 'upload' | 'analyzing' | 'results'
+type View = 'loading' | 'home' | 'upload' | 'analyzing' | 'results'
+
+const isElectron = typeof window !== 'undefined' && !!(window as Window & { electronAPI?: unknown }).electronAPI
 
 export default function App() {
-  const [view,            setView]            = useState<View>('home')
+  const [view,            setView]            = useState<View>(isElectron ? 'loading' : 'home')
+  const [backendLogs,     setBackendLogs]     = useState<string[]>([])
+  const [backendError,    setBackendError]    = useState<string | null>(null)
   const [job,             setJob]             = useState<Job | null>(null)
+  const [uploadError,     setUploadError]     = useState<string | null>(null)
   const [results,         setResults]         = useState<TextOccurrence[]>([])
   const [videoUrl,        setVideoUrl]        = useState<string>('')
   const [videoFilename,   setVideoFilename]   = useState<string>('')
   const [currentProject,  setCurrentProject]  = useState<SavedProject | null>(null)
   const pendingProjectRef = useRef<SavedProject | null>(null)
 
+  useEffect(() => {
+    if (!isElectron) return
+    const api = (window as unknown as { electronAPI: {
+      getBackendStatus: () => { ready: boolean; logs: string[] }
+      onBackendLog:   (cb: (l: string) => void) => void
+      onBackendReady: (cb: () => void) => void
+      onBackendError: (cb: (m: string) => void) => void
+      offBackendLog:  () => void
+    } }).electronAPI
+
+    const status = api.getBackendStatus()
+    if (status.ready) { setView('home'); return }
+    if (status.logs.length) setBackendLogs(status.logs)
+
+    api.onBackendLog(line => setBackendLogs(prev => [...prev, line]))
+    api.onBackendReady(() => setView('home'))
+    api.onBackendError(msg => setBackendError(msg))
+    return () => api.offBackendLog()
+  }, [])
+
   async function handleUpload(file: File, mode: string) {
+    setUploadError(null)
     const blobUrl = URL.createObjectURL(file)
     setVideoUrl(blobUrl)
     setVideoFilename(file.name)
     setView('analyzing')
 
-    const jobId = await uploadVideo(file, mode)
+    let jobId: string
+    try {
+      jobId = await uploadVideo(file, mode)
+    } catch (err) {
+      setUploadError(String(err))
+      return
+    }
 
     const poll = setInterval(async () => {
-      const updated = await pollJob(jobId)
+      let updated: Job
+      try {
+        updated = await pollJob(jobId)
+      } catch {
+        return
+      }
       setJob(updated)
       if (updated.status === 'done') {
         clearInterval(poll)
@@ -73,7 +111,7 @@ export default function App() {
     setCurrentProject(project)
     setResults(project.results)
     // Serve the video from the backend (persisted in the uploads volume)
-    setVideoUrl(`/api/video/${encodeURIComponent(project.videoFilename)}`)
+    setVideoUrl(apiUrl(`/api/video/${encodeURIComponent(project.videoFilename)}`))
     setVideoFilename(project.videoFilename)
     setView('results')
   }
@@ -81,6 +119,7 @@ export default function App() {
   function handleReset() {
     setView('home')
     setJob(null)
+    setUploadError(null)
     setResults([])
     if (videoUrl.startsWith('blob:')) URL.revokeObjectURL(videoUrl)
     setVideoUrl('')
@@ -89,8 +128,9 @@ export default function App() {
     pendingProjectRef.current = null
   }
 
-  if (view === 'analyzing' && job) return <AnalysisPage job={job} />
-  if (view === 'analyzing') return <AnalysisPage job={null} />
+  if (view === 'loading') return <LoadingPage logs={backendLogs} error={backendError} />
+  if (view === 'analyzing' && job) return <AnalysisPage job={job} uploadError={uploadError} />
+  if (view === 'analyzing') return <AnalysisPage job={null} uploadError={uploadError} />
   if (view === 'upload') return (
     <UploadPage
       onUpload={(file, mode) => handleUpload(file, mode)}

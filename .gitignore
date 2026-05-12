@@ -30,6 +30,19 @@ backend/test_frames/
 test/
 .claude/
 
+# Electron build artefacts
+electron/node_modules/
+electron/frontend-dist/
+electron/backend-dist/
+electron/resources-python/
+electron/resources-backend/
+electron/resources-bin/
+dist-electron/
+backend/ffmpeg.exe
+backend/ffprobe.exe
+backend/dist/
+backend/build/
+
 # OS
 .DS_Store
 Thumbs.db

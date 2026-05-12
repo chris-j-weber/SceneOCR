@@ -1,0 +1,139 @@
+# SceneOCR — portable Windows build
+# Produces: SceneOCR-<version>-win-x64.zip  (extract → run SceneOCR.exe)
+# Usage: docker build -f Dockerfile.build -o dist-electron .
+
+
+# ── Stage 1: Build the React/Vite frontend ───────────────────────────────────
+FROM node:20-alpine AS frontend
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
+
+
+# ── Stage 2: Python packages for Windows ─────────────────────────────────────
+#
+# Strategy: install everything on Linux first (correct dep resolution, no
+# uvloop cross-platform issue), then overlay the Windows-compiled wheels for
+# the 4 packages that have native code, and delete the Linux .so files.
+FROM python:3.11-slim AS pypackages
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip -q
+
+# Full install on Linux
+RUN pip install --target /site-packages -q --no-warn-script-location \
+    fastapi==0.111.0 \
+    uvicorn==0.29.0 \
+    python-multipart==0.0.9 \
+    Pillow==10.3.0 \
+    numpy==1.26.4 \
+    pyspellchecker==0.8.1 \
+    rapidocr-onnxruntime \
+    onnxruntime==1.24.4
+
+# Find the exact installed versions of compiled packages, download their
+# Windows wheels, and unzip them over the Linux install.
+# onnxruntime is excluded here — replaced with onnxruntime-directml below.
+RUN pip list --path /site-packages --format=freeze \
+        | grep -iE "^(numpy|pillow|pydantic.core|opencv.python(-headless)?|pyclipper|shapely)==" \
+        > /req-win.txt \
+    && echo "=== Windows wheels needed ===" && cat /req-win.txt \
+    && pip download \
+        --platform win_amd64 \
+        --python-version 311 \
+        --implementation cp \
+        --only-binary :all: \
+        --no-deps \
+        --dest /win-wheels \
+        $(cat /req-win.txt | xargs) \
+    && for whl in /win-wheels/*.whl; do \
+        unzip -q -o "$whl" -d /site-packages/ 2>/dev/null; \
+    done
+
+# Replace onnxruntime (CPU-only) with onnxruntime-directml for Windows GPU support.
+# DirectML uses Windows DirectX 12 and works on any GPU (NVIDIA/AMD/Intel) without
+# requiring CUDA drivers on end-user machines. Falls back to CPU automatically.
+RUN ONNX_VER=$(pip list --path /site-packages --format=freeze | grep -i "^onnxruntime==" | cut -d= -f3) \
+    && echo "=== onnxruntime ${ONNX_VER} -> onnxruntime-directml ===" \
+    && pip download \
+        --platform win_amd64 \
+        --python-version 311 \
+        --implementation cp \
+        --only-binary :all: \
+        --no-deps \
+        --dest /win-wheels \
+        "onnxruntime-directml==${ONNX_VER}" \
+    && for whl in /win-wheels/onnxruntime_directml*.whl; do \
+        unzip -q -o "$whl" -d /site-packages/; \
+    done
+
+# Remove Linux .so files — Windows uses .pyd instead
+RUN find /site-packages -name "*.so" -delete
+
+# Remove .pth files — these add Linux-specific dirs (e.g. cv2/) to sys.path
+# and cause import recursion in Windows embeddable Python
+RUN find /site-packages -maxdepth 1 -name "*.pth" -delete
+
+
+# ── Stage 3: Assemble resources + package with electron-builder ───────────────
+FROM node:20-bookworm AS packager
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl unzip python3 wine \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# ── Windows embeddable Python ─────────────────────────────────────────────────
+ARG PYTHON_EMBED=3.11.9
+RUN mkdir -p electron/resources-python \
+    && curl -fsSL "https://www.python.org/ftp/python/${PYTHON_EMBED}/python-${PYTHON_EMBED}-embed-amd64.zip" \
+        -o python-embed.zip \
+    && unzip -q python-embed.zip -d electron/resources-python \
+    && rm python-embed.zip \
+    && python3 -c "\
+import pathlib; \
+pth = next(pathlib.Path('electron/resources-python').glob('python*._pth')); \
+text = pth.read_text(); \
+text = text.replace('#import site', 'import site'); \
+text = text + ('Lib/site-packages\n' if 'Lib/site-packages' not in text else ''); \
+pth.write_text(text); \
+print('Patched', pth.name)"
+
+# Copy installed Python packages into embedded Python's site-packages
+COPY --from=pypackages /site-packages/ electron/resources-python/Lib/site-packages/
+
+# ── FFmpeg static build for Windows ──────────────────────────────────────────
+ARG FFMPEG_VER=7.0.2
+RUN mkdir -p electron/resources-bin \
+    && curl -fsSL \
+       "https://github.com/GyanD/codexffmpeg/releases/download/${FFMPEG_VER}/ffmpeg-${FFMPEG_VER}-essentials_build.zip" \
+       -o ffmpeg.zip \
+    && unzip -q ffmpeg.zip -d ffmpeg_tmp \
+    && find ffmpeg_tmp -name "ffmpeg.exe"  | head -1 | xargs -I{} cp {} electron/resources-bin/ffmpeg.exe \
+    && find ffmpeg_tmp -name "ffprobe.exe" | head -1 | xargs -I{} cp {} electron/resources-bin/ffprobe.exe \
+    && rm -rf ffmpeg.zip ffmpeg_tmp
+
+# ── Backend Python source ─────────────────────────────────────────────────────
+COPY backend/main.py backend/pipeline.py backend/extractor.py \
+     backend/recognizer.py backend/grouper.py backend/backend_main.py \
+     electron/resources-backend/
+
+# ── Frontend build ────────────────────────────────────────────────────────────
+COPY --from=frontend /app/dist/ electron/frontend-dist/
+
+# ── Electron ──────────────────────────────────────────────────────────────────
+COPY electron/package.json electron/main.js electron/preload.js \
+     electron/electron-builder.yml \
+     electron/
+
+RUN cd electron \
+    && npm install \
+    && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --win --x64
+
+
+# ── Export: output only the zip ───────────────────────────────────────────────
+FROM scratch AS export
+COPY --from=packager /build/dist-electron/ /

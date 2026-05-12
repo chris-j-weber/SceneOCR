@@ -1,0 +1,28 @@
+appId: de.hff.sceneocr
+productName: SceneOCR
+copyright: Copyright © 2025
+
+directories:
+  output: ../dist-electron
+
+# Packed into app.asar: main process + preload + built frontend
+files:
+  - main.js
+  - preload.js
+  - frontend-dist/**/*
+
+# Kept as real files on disk (outside asar) so Python can read them
+extraResources:
+  - from: resources-python
+    to: python
+  - from: resources-backend
+    to: backend-src
+  - from: resources-bin
+    to: bin
+
+win:
+  target:
+    - target: zip
+      arch: [x64]
+
+artifactName: SceneOCR-${version}-win-x64.zip

@@ -1,9 +1,12 @@
 import math
+import threading
 
 import onnxruntime as ort
 from rapidocr_onnxruntime import RapidOCR
 
 _reader: RapidOCR | None = None
+_reader_lock = threading.Lock()
+_active_providers: list[str] = []
 
 
 def _detect_providers() -> list[str]:
@@ -11,6 +14,9 @@ def _detect_providers() -> list[str]:
     if "CUDAExecutionProvider" in available:
         print("[OCR] Using CUDA GPU acceleration", flush=True)
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if "DmlExecutionProvider" in available:
+        print("[OCR] Using DirectML GPU acceleration", flush=True)
+        return ["DmlExecutionProvider", "CPUExecutionProvider"]
     if "CoreMLExecutionProvider" in available:
         print("[OCR] Using CoreML (Apple) acceleration", flush=True)
         return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
@@ -18,17 +24,67 @@ def _detect_providers() -> list[str]:
     return ["CPUExecutionProvider"]
 
 
+def _ep_name(p) -> str:
+    """Extract the provider name string from any ort provider format."""
+    if isinstance(p, str):
+        return p
+    if isinstance(p, (tuple, list)) and p:
+        return str(p[0])
+    if isinstance(p, dict):
+        return next(iter(p), "")
+    return ""
+
+
+def _patch_ort_for_dml() -> None:
+    """Inject DmlExecutionProvider into every ort.InferenceSession created after this call.
+
+    RapidOCR hardcodes CPU providers unless use_cuda=True, so we patch the
+    InferenceSession constructor itself — the only clean hook available.
+    """
+    orig_init = ort.InferenceSession.__init__
+
+    def _dml_init(self, path_or_bytes, sess_options=None, providers=None,
+                  provider_options=None, **kwargs):
+        names = {_ep_name(p) for p in (providers or [])}
+        if not names or names <= {"CPUExecutionProvider"}:
+            providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
+            provider_options = None  # reset: length must match new providers list
+        orig_init(self, path_or_bytes, sess_options=sess_options,
+                  providers=providers, provider_options=provider_options, **kwargs)
+
+    ort.InferenceSession.__init__ = _dml_init
+    print("[OCR] ort.InferenceSession patched: DmlExecutionProvider injected", flush=True)
+
+
 def get_reader() -> RapidOCR:
-    global _reader
+    global _reader, _active_providers
     if _reader is None:
-        providers = _detect_providers()
-        use_cuda = "CUDAExecutionProvider" in providers
-        _reader = RapidOCR(
-            det_use_cuda=use_cuda,
-            rec_use_cuda=use_cuda,
-            cls_use_cuda=use_cuda,
-        )
+        with _reader_lock:
+            if _reader is None:
+                _active_providers = _detect_providers()
+                use_cuda = "CUDAExecutionProvider" in _active_providers
+                use_dml = "DmlExecutionProvider" in _active_providers
+                if use_dml:
+                    _patch_ort_for_dml()
+                _reader = RapidOCR(
+                    det_use_cuda=use_cuda,
+                    rec_use_cuda=use_cuda,
+                    cls_use_cuda=use_cuda,
+                )
     return _reader
+
+
+def get_provider_label() -> str | None:
+    """Returns human-readable provider name once model is loaded, else None."""
+    if not _active_providers:
+        return None
+    if "CUDAExecutionProvider" in _active_providers:
+        return "GPU · CUDA"
+    if "DmlExecutionProvider" in _active_providers:
+        return "GPU · DirectML"
+    if "CoreMLExecutionProvider" in _active_providers:
+        return "GPU · CoreML"
+    return "CPU"
 
 
 # ── geometry helpers ────────────────────────────────────────────────────────

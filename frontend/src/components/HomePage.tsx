@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { apiUrl } from '../api'
 import { deleteProject, loadProjects, updateProject } from '../db'
 import { SavedProject } from '../types'
 
@@ -6,6 +7,8 @@ interface Props {
   onNewProject: () => void
   onOpenProject: (project: SavedProject) => void
 }
+
+interface ProviderInfo { provider: string | null; ready: boolean }
 
 function formatDate(ts: number) {
   return new Date(ts).toLocaleDateString('en-GB', {
@@ -18,11 +21,25 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
   const [projects, setProjects] = useState<SavedProject[]>(() => loadProjects())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [providerInfo, setProviderInfo] = useState<ProviderInfo | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (editingId && inputRef.current) inputRef.current.focus()
   }, [editingId])
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    async function poll() {
+      try {
+        const data: ProviderInfo = await fetch(apiUrl('/api/info')).then(r => r.json())
+        setProviderInfo(data)
+        if (!data.ready) timer = setTimeout(poll, 2000)
+      } catch { /* backend not yet reachable */ }
+    }
+    poll()
+    return () => { if (timer) clearTimeout(timer) }
+  }, [])
 
   function startRename(p: SavedProject, e: React.MouseEvent) {
     e.stopPropagation()
@@ -48,8 +65,23 @@ export default function HomePage({ onNewProject, onOpenProject }: Props) {
   return (
     <div className="home-page">
       <header className="home-header">
-        <h1 className="app-title">SceneOCR</h1>
-        <p className="app-subtitle">On-screen text recognition — local, no cloud</p>
+        <div>
+          <h1 className="app-title">SceneOCR</h1>
+          <p className="app-subtitle">On-screen text recognition — local, no cloud</p>
+        </div>
+        {providerInfo && (
+          <div
+            className={`provider-badge${providerInfo.ready ? (providerInfo.provider?.includes('GPU') ? ' gpu' : '') : ' loading'}`}
+            title={providerInfo.ready ? (providerInfo.provider ?? 'CPU') : 'OCR engine loading…'}
+          >
+            <span className="provider-badge-icon">
+              {!providerInfo.ready ? '···' : providerInfo.provider?.includes('GPU') ? '⚡' : '▣'}
+            </span>
+            <span className="provider-badge-label">
+              {!providerInfo.ready ? 'Loading' : providerInfo.provider?.includes('GPU') ? 'GPU' : 'CPU'}
+            </span>
+          </div>
+        )}
       </header>
 
       <div className="project-grid">

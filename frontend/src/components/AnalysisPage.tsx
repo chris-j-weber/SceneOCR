@@ -2,6 +2,7 @@ import { Job } from '../types'
 
 interface Props {
   job: Job | null
+  uploadError?: string | null
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -13,11 +14,16 @@ const STATUS_LABELS: Record<string, string> = {
   error: 'Error',
 }
 
-export default function AnalysisPage({ job }: Props) {
+export default function AnalysisPage({ job, uploadError }: Props) {
   const progress = job?.progress ?? 0
-  const label = job ? STATUS_LABELS[job.status] ?? job.status : 'Starting…'
+  const isError = job?.status === 'error' || !!uploadError
+  const label = uploadError
+    ? 'Upload failed'
+    : job
+    ? STATUS_LABELS[job.status] ?? job.status
+    : 'Uploading video…'
   const message = job?.message ?? ''
-  const isError = job?.status === 'error'
+  const errorDetail = uploadError ?? job?.error
 
   return (
     <div className="page center-page">
@@ -40,8 +46,8 @@ export default function AnalysisPage({ job }: Props) {
         <div className="progress-percent">{progress}%</div>
         <div className={`analysis-status${isError ? ' error' : ''}`}>{label}</div>
         {message && <div className="analysis-message">{message}</div>}
-        {isError && job?.error && (
-          <div className="error-detail">{job.error}</div>
+        {isError && errorDetail && (
+          <div className="error-detail">{errorDetail}</div>
         )}
       </div>
     </div>

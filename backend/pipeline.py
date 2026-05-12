@@ -1,13 +1,22 @@
+import os
 import shutil
+import traceback
 import uuid
 from pathlib import Path
 
 from extractor import extract_frames, extract_frames_window, get_video_fps
 from grouper import group_text_tracks
-from recognizer import recognize_frame
+from recognizer import get_reader, recognize_frame
 
-UPLOAD_DIR = Path("/app/uploads")
-JOBS_DIR   = Path("/app/jobs")
+def _default_data_dir() -> Path:
+    # Docker: /app exists → keep old layout. Standalone: user data from env or home.
+    if Path("/app").exists():
+        return Path("/app")
+    return Path.home() / ".sceneocr"
+
+_data = Path(os.environ.get("SCENEOCR_DATA_DIR", str(_default_data_dir())))
+UPLOAD_DIR = Path(os.environ.get("SCENEOCR_UPLOADS_DIR", str(_data / "uploads")))
+JOBS_DIR   = Path(os.environ.get("SCENEOCR_JOBS_DIR",   str(_data / "jobs")))
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -93,7 +102,9 @@ def _run_single_pass(job: dict, video_path: str, frames_dir: str, fps: float) ->
         raise RuntimeError("No frames extracted from video.")
 
     job.update(status="analyzing", progress=15,
-               message=f"Extracted {total} frames. Starting OCR…")
+               message="Loading OCR engine…")
+    get_reader()
+    job["message"] = f"Extracted {total} frames. Starting OCR…"
 
     timestamps = [i / fps for i in range(total)]
     timed = _ocr_frames(frames, timestamps, job, 15, 88, "Analysing")
@@ -118,7 +129,9 @@ def _run_two_pass(job: dict, video_path: str, frames_dir: str, detail_fps: float
         raise RuntimeError("No frames extracted from video.")
 
     job.update(status="analyzing", progress=8,
-               message=f"Pass 1: analysing {total1} frames…")
+               message="Loading OCR engine…")
+    get_reader()
+    job["message"] = f"Pass 1: analysing {total1} frames…"
 
     ts1 = [float(i) for i in range(total1)]
     pass1 = _ocr_frames(frames1, ts1, job, 8, 35, "Pass 1")
@@ -200,6 +213,7 @@ def run_pipeline(job_id: str) -> None:
             _run_two_pass(job, video_path, frames_dir, detail_fps=native_fps)
 
     except Exception as exc:
+        print(f"[pipeline] ERROR:\n{traceback.format_exc()}", flush=True)
         job.update(status="error", error=str(exc), message=f"Error: {exc}")
     finally:
         shutil.rmtree(frames_dir, ignore_errors=True)

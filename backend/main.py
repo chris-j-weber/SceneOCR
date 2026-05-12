@@ -1,4 +1,5 @@
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -6,8 +7,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from pipeline import UPLOAD_DIR, create_job, get_job, run_pipeline
+from recognizer import get_provider_label, get_reader
 
-app = FastAPI(title="Video Text Analyzer")
+
+def _preload_ocr():
+    import time
+    print("[backend] Preloading OCR engine in background…", flush=True)
+    t0 = time.time()
+    get_reader()
+    print(f"[backend] OCR engine ready ({time.time() - t0:.1f}s)", flush=True)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    threading.Thread(target=_preload_ocr, daemon=True, name="ocr-preload").start()
+    yield
+
+
+app = FastAPI(title="Video Text Analyzer", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,6 +73,12 @@ def job_results(job_id: str):
     if job["status"] != "done":
         raise HTTPException(400, f"Job not finished (status: {job['status']}).")
     return {"results": job["results"]}
+
+
+@app.get("/api/info")
+def get_info():
+    label = get_provider_label()
+    return {"provider": label, "ready": label is not None}
 
 
 @app.get("/api/video/{filename}")
