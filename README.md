@@ -2,6 +2,9 @@
 
 Extracts, tracks, and exports on-screen text from videos. Runs fully locally — no cloud, no API keys.
 
+**[Download v1.0.0 for Windows →](https://github.com/chris-j-weber/SceneOCR/releases/tag/v1.0.0)**
+Unzip and run the `.exe` — no installation required.
+
 ![SceneOCR screenshot](screenshots/screenshot1.png)
 
 ## Features
