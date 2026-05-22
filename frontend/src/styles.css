@@ -692,6 +692,97 @@ body {
 .log-line { color: var(--text-muted); }
 .log-line.muted { opacity: 0.45; font-style: italic; }
 
+/* ── Time range ── */
+.time-range-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  -webkit-user-select: none;
+  user-select: none;
+  margin-top: 0.25rem;
+}
+.time-range-toggle input { cursor: pointer; accent-color: var(--accent); }
+
+.time-range-controls { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
+
+/* Dual-handle range slider */
+.range-dual {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+.range-dual-track {
+  position: absolute;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    var(--surface-2) var(--start-pct, 0%),
+    var(--accent)    var(--start-pct, 0%),
+    var(--accent)    var(--end-pct, 100%),
+    var(--surface-2) var(--end-pct, 100%)
+  );
+}
+.range-dual input[type=range] {
+  position: absolute;
+  width: 100%;
+  height: 4px;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+}
+.range-dual input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+  pointer-events: all;
+  transition: transform 0.1s;
+}
+.range-dual input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+.range-dual input[type=range]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+  pointer-events: all;
+}
+.range-dual input[type=range].range-front { z-index: 1; }
+
+.time-range-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.frame-preview {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+  aspect-ratio: 16 / 9;
+  margin-top: 0.4rem;
+}
+.frame-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.frame-preview-label { font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 0.2rem; }
+
+.hidden-video { display: none; }
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

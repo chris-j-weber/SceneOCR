@@ -16,14 +16,22 @@ def _bin(name: str) -> str:
     return name
 
 
-def extract_frames(video_path: str, output_dir: str, fps: float = 1.0) -> list[str]:
+def extract_frames(
+    video_path: str,
+    output_dir: str,
+    fps: float = 1.0,
+    start: float = 0.0,
+    end: float | None = None,
+) -> list[str]:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    cmd = [
-        _bin("ffmpeg"), "-i", video_path,
-        "-vf", f"fps={fps}",
-        "-q:v", "2", "-f", "image2",
-        f"{output_dir}/frame_%08d.jpg", "-y",
-    ]
+    cmd = [_bin("ffmpeg")]
+    if start > 0:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += ["-i", video_path]
+    if end is not None:
+        cmd += ["-t", f"{end - start:.3f}"]
+    cmd += ["-vf", f"fps={fps}", "-q:v", "2", "-f", "image2",
+            f"{output_dir}/frame_%08d.jpg", "-y"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg error: {result.stderr}")

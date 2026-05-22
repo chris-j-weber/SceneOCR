@@ -44,7 +44,7 @@ export default function App() {
     return () => api.offBackendLog()
   }, [])
 
-  async function handleUpload(file: File, mode: string) {
+  async function handleUpload(file: File, mode: string, startTime?: number, endTime?: number) {
     setUploadError(null)
     const blobUrl = URL.createObjectURL(file)
     setVideoUrl(blobUrl)
@@ -53,7 +53,7 @@ export default function App() {
 
     let jobId: string
     try {
-      jobId = await uploadVideo(file, mode)
+      jobId = await uploadVideo(file, mode, startTime, endTime)
     } catch (err) {
       setUploadError(String(err))
       return
@@ -133,7 +133,7 @@ export default function App() {
   if (view === 'analyzing') return <AnalysisPage job={null} uploadError={uploadError} />
   if (view === 'upload') return (
     <UploadPage
-      onUpload={(file, mode) => handleUpload(file, mode)}
+      onUpload={handleUpload}
       onBack={() => setView('home')}
     />
   )

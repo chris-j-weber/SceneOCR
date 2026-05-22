@@ -2,6 +2,8 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from typing import Optional
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -40,6 +42,8 @@ VALID_MODES = {"fast", "accurate", "max"}
 async def upload_video(
     file: UploadFile = File(...),
     mode: str = Form("accurate"),
+    start_time: float = Form(0.0),
+    end_time: Optional[float] = Form(None),
 ):
     if not file.filename:
         raise HTTPException(400, "No filename provided.")
@@ -52,7 +56,8 @@ async def upload_video(
         while chunk := await file.read(chunk_size):
             f.write(chunk)
 
-    job_id = create_job(str(video_path), mode=mode)
+    job_id = create_job(str(video_path), mode=mode,
+                        start_time=start_time, end_time=end_time)
     threading.Thread(target=run_pipeline, args=(job_id,), daemon=True).start()
     return {"job_id": job_id}
 

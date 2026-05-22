@@ -11,10 +11,17 @@ export function apiUrl(path: string): string {
   return _base() + path
 }
 
-export async function uploadVideo(file: File, mode: string): Promise<string> {
+export async function uploadVideo(
+  file: File,
+  mode: string,
+  startTime?: number,
+  endTime?: number,
+): Promise<string> {
   const form = new FormData()
   form.append('file', file)
   form.append('mode', mode)
+  if (startTime !== undefined) form.append('start_time', String(startTime))
+  if (endTime   !== undefined) form.append('end_time',   String(endTime))
   const res = await fetch(apiUrl('/api/jobs'), { method: 'POST', body: form })
   if (!res.ok) throw new Error(await res.text())
   return (await res.json()).job_id

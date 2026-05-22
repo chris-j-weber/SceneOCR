@@ -31,7 +31,12 @@ _DETAIL_FPS: dict[str, float | None] = {
 }
 
 
-def create_job(video_path: str, mode: str) -> str:
+def create_job(
+    video_path: str,
+    mode: str,
+    start_time: float = 0.0,
+    end_time: float | None = None,
+) -> str:
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
         "id": job_id,
@@ -42,6 +47,8 @@ def create_job(video_path: str, mode: str) -> str:
         "error": None,
         "video_path": video_path,
         "mode": mode,
+        "start_time": start_time,
+        "end_time": end_time,
     }
     return job_id
 
@@ -92,11 +99,14 @@ def _find_text_windows(
 
 # ── pipeline modes ────────────────────────────────────────────────────────────
 
-def _run_single_pass(job: dict, video_path: str, frames_dir: str, fps: float) -> None:
+def _run_single_pass(
+    job: dict, video_path: str, frames_dir: str, fps: float,
+    start_time: float = 0.0, end_time: float | None = None,
+) -> None:
     job.update(status="extracting_frames", progress=5,
                message=f"Extracting frames at {fps} fps…")
 
-    frames = extract_frames(video_path, frames_dir, fps=fps)
+    frames = extract_frames(video_path, frames_dir, fps=fps, start=start_time, end=end_time)
     total  = len(frames)
     if total == 0:
         raise RuntimeError("No frames extracted from video.")
@@ -106,7 +116,7 @@ def _run_single_pass(job: dict, video_path: str, frames_dir: str, fps: float) ->
     get_reader()
     job["message"] = f"Extracted {total} frames. Starting OCR…"
 
-    timestamps = [i / fps for i in range(total)]
+    timestamps = [start_time + i / fps for i in range(total)]
     timed = _ocr_frames(frames, timestamps, job, 15, 88, "Analysing")
 
     job.update(status="grouping", progress=90, message="Grouping text occurrences…")
@@ -117,13 +127,16 @@ def _run_single_pass(job: dict, video_path: str, frames_dir: str, fps: float) ->
                results=results)
 
 
-def _run_two_pass(job: dict, video_path: str, frames_dir: str, detail_fps: float) -> None:
+def _run_two_pass(
+    job: dict, video_path: str, frames_dir: str, detail_fps: float,
+    start_time: float = 0.0, end_time: float | None = None,
+) -> None:
     # ── Pass 1 : coarse 1 fps scan ────────────────────────────────────────
     dir1 = frames_dir + "_p1"
     job.update(status="extracting_frames", progress=3,
                message="Pass 1: scanning at 1 fps…")
 
-    frames1 = extract_frames(video_path, dir1, fps=1.0)
+    frames1 = extract_frames(video_path, dir1, fps=1.0, start=start_time, end=end_time)
     total1  = len(frames1)
     if total1 == 0:
         raise RuntimeError("No frames extracted from video.")
@@ -133,12 +146,12 @@ def _run_two_pass(job: dict, video_path: str, frames_dir: str, detail_fps: float
     get_reader()
     job["message"] = f"Pass 1: analysing {total1} frames…"
 
-    ts1 = [float(i) for i in range(total1)]
+    ts1 = [start_time + float(i) for i in range(total1)]
     pass1 = _ocr_frames(frames1, ts1, job, 8, 35, "Pass 1")
     shutil.rmtree(dir1, ignore_errors=True)
 
     # ── Find refinement windows ───────────────────────────────────────────
-    video_end = float(total1)
+    video_end = start_time + float(total1)
     windows   = _find_text_windows(pass1, video_end)
 
     job.update(progress=37,
@@ -201,16 +214,21 @@ def run_pipeline(job_id: str) -> None:
 
     video_path = job["video_path"]
     mode       = job.get("mode", "accurate")
+    start_time = job.get("start_time", 0.0)
+    end_time   = job.get("end_time", None)
     frames_dir = str(JOBS_DIR / job_id / "frames")
 
     try:
         if mode == "fast":
-            _run_single_pass(job, video_path, frames_dir, fps=1.0)
+            _run_single_pass(job, video_path, frames_dir, fps=1.0,
+                             start_time=start_time, end_time=end_time)
         elif mode == "accurate":
-            _run_two_pass(job, video_path, frames_dir, detail_fps=8.0)
+            _run_two_pass(job, video_path, frames_dir, detail_fps=8.0,
+                          start_time=start_time, end_time=end_time)
         else:  # max
             native_fps = get_video_fps(video_path)
-            _run_two_pass(job, video_path, frames_dir, detail_fps=native_fps)
+            _run_two_pass(job, video_path, frames_dir, detail_fps=native_fps,
+                          start_time=start_time, end_time=end_time)
 
     except Exception as exc:
         print(f"[pipeline] ERROR:\n{traceback.format_exc()}", flush=True)
