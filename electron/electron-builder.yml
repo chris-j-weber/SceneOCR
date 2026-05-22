@@ -9,6 +9,7 @@ directories:
 files:
   - main.js
   - preload.js
+  - icon.png
   - frontend-dist/**/*
 
 # Kept as real files on disk (outside asar) so Python can read them
@@ -21,6 +22,7 @@ extraResources:
     to: bin
 
 win:
+  icon: icon.ico
   target:
     - target: zip
       arch: [x64]

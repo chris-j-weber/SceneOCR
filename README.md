@@ -115,3 +115,4 @@ frontend/src/
 - [x] **Basic functionality** — OCR analysis, bounding-box overlay, editable tracks, project save/reopen, and CSV export.
 - [x] **GPU and CPU Support** - check if GPU is available else use CPU
 - [ ] **Time range selection** — Option in settings to restrict analysis to a specific time range instead of processing the entire video. Includes a range slider with a live preview of the selected start and end frames.
+- [ ] **macOS build** — Packaged standalone build for macOS.

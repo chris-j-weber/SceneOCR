@@ -81,7 +81,7 @@ RUN find /site-packages -maxdepth 1 -name "*.pth" -delete
 FROM node:20-bookworm AS packager
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl unzip python3 wine \
+        curl unzip zip python3 wine \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -126,12 +126,19 @@ COPY --from=frontend /app/dist/ electron/frontend-dist/
 
 # ── Electron ──────────────────────────────────────────────────────────────────
 COPY electron/package.json electron/main.js electron/preload.js \
-     electron/electron-builder.yml \
+     electron/electron-builder.yml electron/set-icon.js \
+     electron/icon.png electron/icon.ico \
      electron/
 
 RUN cd electron \
     && npm install \
-    && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --win --x64
+    && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --win --x64 \
+    && node set-icon.js \
+    && VERSION=$(node -p "require('./package.json').version") \
+    && cd /build/dist-electron \
+    && rm -f "SceneOCR-${VERSION}-win-x64.zip" \
+    && cd win-unpacked \
+    && zip -r "../SceneOCR-${VERSION}-win-x64.zip" .
 
 
 # ── Export: output only the zip ───────────────────────────────────────────────
