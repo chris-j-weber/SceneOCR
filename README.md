@@ -2,7 +2,7 @@
 
 Extracts, tracks, and exports on-screen text from videos. Runs fully locally — no cloud, no API keys.
 
-**[Download v1.0.0 for Windows →](https://github.com/chris-j-weber/SceneOCR/releases/tag/v1.0.0)**
+**[Download v1.1.0 for Windows →](https://github.com/chris-j-weber/SceneOCR/releases/tag/v1.1.0)**
 Unzip and run the `.exe` — no installation required.
 
 ![SceneOCR screenshot](screenshots/screenshot1.png)
@@ -114,5 +114,5 @@ frontend/src/
 
 - [x] **Basic functionality** — OCR analysis, bounding-box overlay, editable tracks, project save/reopen, and CSV export.
 - [x] **GPU and CPU Support** - check if GPU is available else use CPU
-- [ ] **Time range selection** — Option in settings to restrict analysis to a specific time range instead of processing the entire video. Includes a range slider with a live preview of the selected start and end frames.
+- [x] **Time range selection** — Option in settings to restrict analysis to a specific time range instead of processing the entire video. Includes a range slider with a live preview of the selected start and end frames.
 - [ ] **macOS build** — Packaged standalone build for macOS.
